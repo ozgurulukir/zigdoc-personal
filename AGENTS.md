@@ -83,3 +83,6 @@ const output = try writer.toOwnedSlice();
 - Add assertions at API boundaries and state transitions; avoid trivial assertions.
 - Keep functions small and push pure computation into helpers.
 - Comments should explain why, not what.
+- Guard recursive/iterative alias-following loops with hop counts (e.g., 64) to prevent infinite loops on circular references.
+- Replace `@panic` with graceful error handling in library code; reserve panics for true unreachable states.
+- Avoid force-unwraps (`.?`) on optional values from external/untrusted input; use `orelse` guards instead.

@@ -313,11 +313,16 @@ pub const File = struct {
         }
 
         fn categorizeDeclAsCallee(decl_index: Decl.Index, call_node: Ast.Node.Index) Category {
-            return switch (decl_index.get().categorize()) {
-                .type_function => .type,
-                .alias => |aliasee| categorizeDeclAsCallee(aliasee, call_node),
-                else => .{ .global_const = call_node },
-            };
+            var current = decl_index;
+            var hops: usize = 0;
+            while (hops < 64) : (hops += 1) {
+                switch (current.get().categorize()) {
+                    .type_function => return .type,
+                    .alias => |aliasee| current = aliasee,
+                    else => return .{ .global_const = call_node },
+                }
+            }
+            return .{ .global_const = call_node };
         }
 
         fn categorizeBuiltinCall(
@@ -331,7 +336,10 @@ pub const File = struct {
             if (std.mem.eql(u8, builtin_name, "@import")) {
                 const str_lit_token = ast.nodeMainToken(params[0]);
                 const str_bytes = ast.tokenSlice(str_lit_token);
-                const file_path = std.zig.string_literal.parseAlloc(gpa, str_bytes) catch @panic("OOM");
+                const file_path = std.zig.string_literal.parseAlloc(gpa, str_bytes) catch |err| {
+                    log.warn("@import string literal parse failed: {}", .{err});
+                    return .{ .global_const = node };
+                };
                 defer gpa.free(file_path);
                 if (modules.get(file_path)) |imported_file_index| {
                     return Category.makeAlias(File.Index.findRootDecl(imported_file_index), node);
@@ -343,7 +351,10 @@ pub const File = struct {
                     const base_path = file_index.path();
                     break :blk std.fs.path.resolve(gpa, &.{
                         base_path, "..", file_path,
-                    }) catch @panic("OOM");
+                    }) catch |err| {
+                        log.warn("@import path resolve failed: {}", .{err});
+                        return .{ .global_const = node };
+                    };
                 };
                 defer {
                     if (!std.fs.path.isAbsolute(file_path) or resolved_path.ptr != file_path.ptr) {

@@ -335,7 +335,7 @@ fn initProject(allocator: std.mem.Allocator, io: std.Io) !void {
 }
 
 fn installSkills(allocator: std.mem.Allocator, io: std.Io, cwd: std.Io.Dir) !void {
-    try deleteTreeIfExists(cwd, io, skills_temp_root);
+    deleteTreeIfExists(cwd, io, skills_temp_root);
     defer cwd.deleteTree(io, skills_temp_root) catch {};
 
     try cwd.createDirPath(io, skills_extract_path);
@@ -382,13 +382,13 @@ fn installExtractedSkills(allocator: std.mem.Allocator, io: std.Io, cwd: std.Io.
         const dest_path = try std.fs.path.join(allocator, &.{ skills_dest_root, entry.name });
         defer allocator.free(dest_path);
 
-        try deleteTreeIfExists(cwd, io, dest_path);
+        deleteTreeIfExists(cwd, io, dest_path);
         try cwd.rename(source_path, cwd, dest_path, io);
     }
 }
 
-fn deleteTreeIfExists(dir: std.Io.Dir, io: std.Io, sub_path: []const u8) !void {
-    try dir.deleteTree(io, sub_path);
+fn deleteTreeIfExists(dir: std.Io.Dir, io: std.Io, sub_path: []const u8) void {
+    dir.deleteTree(io, sub_path) catch {};
 }
 
 fn runRequiredCommand(
@@ -548,7 +548,10 @@ fn parseBuildOutput(allocator: std.mem.Allocator, io: std.Io, output: []const u8
         const module_name = entry.key_ptr.*;
         const module_data = entry.value_ptr.*.object;
 
-        const root_path = module_data.get("root").?.string;
+        const root_path = blk: {
+            const root_val = module_data.get("root") orelse continue;
+            break :blk root_val.string;
+        };
 
         // Skip non-Zig files (fonts, images, etc.)
         if (!std.mem.endsWith(u8, root_path, ".zig")) continue;
@@ -662,12 +665,13 @@ fn resolveHierarchical(allocator: std.mem.Allocator, symbol: []const u8) !?Walk.
 
     // Find the root declaration
     var current_decl: ?Walk.Decl.Index = null;
+    var fqn_buf: std.ArrayList(u8) = .empty;
+    defer fqn_buf.deinit(allocator);
     for (Walk.decls.items, 0..) |*decl, i| {
         const info = decl.extraInfo();
         if (!info.is_pub) continue;
 
-        var fqn_buf: std.ArrayList(u8) = .empty;
-        defer fqn_buf.deinit(allocator);
+        fqn_buf.clearRetainingCapacity();
         try decl.fqn(&fqn_buf);
 
         if (std.mem.eql(u8, fqn_buf.items, first_part)) {
@@ -743,6 +747,8 @@ fn findSymbol(allocator: std.mem.Allocator, symbol: []const u8) !?Walk.Decl.Inde
         if (try resolveHierarchical(allocator, symbol)) |decl_index| return decl_index;
     }
 
+    var fqn_buf: std.ArrayList(u8) = .empty;
+    defer fqn_buf.deinit(allocator);
     for (Walk.decls.items, 0..) |*decl, i| {
         const file_path = decl.file.path();
         if (file_path.len == 0) continue;
@@ -753,8 +759,7 @@ fn findSymbol(allocator: std.mem.Allocator, symbol: []const u8) !?Walk.Decl.Inde
         const info = decl.extraInfo();
         if (!info.is_pub) continue;
 
-        var fqn_buf: std.ArrayList(u8) = .empty;
-        defer fqn_buf.deinit(allocator);
+        fqn_buf.clearRetainingCapacity();
         try decl.fqn(&fqn_buf);
 
         if (std.mem.eql(u8, fqn_buf.items, symbol)) return @enumFromInt(i);
@@ -856,9 +861,10 @@ fn printNotFound(allocator: std.mem.Allocator, writer: anytype, symbol: []const 
     };
 
     const module_exists = blk: {
+        var fqn_buf: std.ArrayList(u8) = .empty;
+        defer fqn_buf.deinit(allocator);
         for (Walk.decls.items) |*decl| {
-            var fqn_buf: std.ArrayList(u8) = .empty;
-            defer fqn_buf.deinit(allocator);
+            fqn_buf.clearRetainingCapacity();
             try decl.fqn(&fqn_buf);
             if (std.mem.eql(u8, fqn_buf.items, first_part)) break :blk true;
         }
@@ -956,7 +962,7 @@ fn printMembers(allocator: std.mem.Allocator, writer: anytype, decl: *const Walk
                 for (Walk.decls.items, 0..) |*d, idx| {
                     if (d == decl) break :blk idx;
                 }
-                @panic("decl not found in Walk.decls.items");
+                return false; // decl not found; nothing to print
             };
 
             while (i < Walk.decls.items.len) : (i += 1) {

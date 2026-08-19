@@ -276,8 +276,13 @@ pub fn find(search_string: []const u8) Decl.Index {
     const file = Walk.modules.get(path_components.first()) orelse return .none;
     var current_decl_index = file.findRootDecl();
     while (path_components.next()) |component| {
+        var hop_count: usize = 0;
         while (true) switch (current_decl_index.get().categorize()) {
-            .alias => |aliasee| current_decl_index = aliasee,
+            .alias => |aliasee| {
+                hop_count += 1;
+                if (hop_count >= 64) return .none;
+                current_decl_index = aliasee;
+            },
             else => break,
         };
         current_decl_index = current_decl_index.get().getChild(component) orelse return .none;
