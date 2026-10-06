@@ -186,6 +186,11 @@ fn parseCli(allocator: std.mem.Allocator, io: std.Io, args: *std.process.Args.It
             std.process.exit(0);
         }
 
+        if (std.mem.eql(u8, arg, "--version")) {
+            std.debug.print("zigdoc 0.1.0\n", .{});
+            std.process.exit(0);
+        }
+
         if (std.mem.eql(u8, arg, "--dump-imports")) {
             var arena = std.heap.ArenaAllocator.init(allocator);
             defer arena.deinit();

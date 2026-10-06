@@ -1165,6 +1165,18 @@ pub fn isPrimitiveNonType(name: []const u8) bool {
 //    try w.root();
 //}
 
+
+
+/// Clean up all file indexes and allocated memory.
+/// This should be called when done using Walk to free memory.
+pub fn cleanup(allocator: std.mem.Allocator) void {
+    // Clear the files map - this will also cleanup the File structs' internal maps
+    files = .empty;
+    // Clear the modules map
+    modules = .empty;
+    // Clear the decls array list
+    decls.deinit(allocator);
+}
 fn shrinkToFit(m: anytype) void {
     m.shrinkAndFree(gpa, m.entries.len);
 }
